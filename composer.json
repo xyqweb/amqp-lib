@@ -1,5 +1,5 @@
 {
-    "name": "enqueue/amqp-lib",
+    "name": "xyqweb/amqp-lib",
     "type": "library",
     "description": "Message Queue Amqp Transport",
     "keywords": ["messaging", "queue", "amqp"],
