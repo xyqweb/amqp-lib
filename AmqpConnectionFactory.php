@@ -1,11 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Enqueue\AmqpLib;
 
 use Enqueue\AmqpTools\ConnectionConfig;
 use Enqueue\AmqpTools\DelayStrategyAware;
 use Enqueue\AmqpTools\DelayStrategyAwareTrait;
+use Enqueue\AmqpTools\RabbitMqDlxDelayStrategy;
 use Interop\Amqp\AmqpConnectionFactory as InteropAmqpConnectionFactory;
+use Interop\Queue\Context;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Connection\AMQPLazyConnection;
 use PhpAmqpLib\Connection\AMQPLazySocketConnection;
@@ -28,10 +32,7 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
     private $connection;
 
     /**
-     * @see \Enqueue\AmqpTools\ConnectionConfig for possible config formats and values
-     *
-     * In addition this factory accepts next options:
-     *   receive_method - Could be either basic_get or basic_consume
+     * @see \Enqueue\AmqpTools\ConnectionConfig for possible config formats and values.
      *
      * @param array|string|null $config
      */
@@ -46,24 +47,20 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
             ->addDefaultOption('login_response', null)
             ->addDefaultOption('locale', 'en_US')
             ->addDefaultOption('keepalive', false)
-            ->addDefaultOption('receive_method', 'basic_get')
+            ->addDefaultOption('channel_rpc_timeout', 0.)
+            ->addDefaultOption('heartbeat_on_tick', true)
             ->parse()
         ;
 
-        $supportedMethods = ['basic_get', 'basic_consume'];
-        if (false == in_array($this->config->getOption('receive_method'), $supportedMethods, true)) {
-            throw new \LogicException(sprintf(
-                'Invalid "receive_method" option value "%s". It could be only "%s"',
-                $this->config->getOption('receive_method'),
-                implode('", "', $supportedMethods)
-            ));
+        if (in_array('rabbitmq', $this->config->getSchemeExtensions(), true)) {
+            $this->setDelayStrategy(new RabbitMqDlxDelayStrategy());
         }
     }
 
     /**
      * @return AmqpContext
      */
-    public function createContext()
+    public function createContext(): Context
     {
         $context = new AmqpContext($this->establishConnection(), $this->config->getConfig());
         $context->setDelayStrategy($this->delayStrategy);
@@ -71,14 +68,11 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
         return $context;
     }
 
-    /**
-     * @return ConnectionConfig
-     */
-    public function getConfig()
+    public function getConfig(): ConnectionConfig
     {
         return $this->config;
     }
-
+    
     /**
      * close connection
      *
@@ -97,7 +91,7 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
     }
 
     /**
-     * close connection
+     * reconnect
      *
      * @author xyq
      * @throws \Exception
@@ -107,10 +101,7 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
         $this->connection->reconnect();
     }
 
-    /**
-     * @return AbstractConnection
-     */
-    private function establishConnection()
+    private function establishConnection(): AbstractConnection
     {
         if (false == $this->connection) {
             if ($this->config->getOption('stream')) {
@@ -158,7 +149,8 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
                         (int) round(min($this->config->getReadTimeout(), $this->config->getWriteTimeout())),
                         null,
                         $this->config->getOption('keepalive'),
-                        (int) round($this->config->getHeartbeat())
+                        (int) round($this->config->getHeartbeat()),
+                        $this->config->getOption('channel_rpc_timeout')
                     );
                 } else {
                     $con = new AMQPStreamConnection(
@@ -175,7 +167,8 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
                         (int) round(min($this->config->getReadTimeout(), $this->config->getWriteTimeout())),
                         null,
                         $this->config->getOption('keepalive'),
-                        (int) round($this->config->getHeartbeat())
+                        (int) round($this->config->getHeartbeat()),
+                        $this->config->getOption('channel_rpc_timeout')
                     );
                 }
             } else {
@@ -197,7 +190,8 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
                         (int) round($this->config->getReadTimeout()),
                         $this->config->getOption('keepalive'),
                         (int) round($this->config->getWriteTimeout()),
-                        (int) round($this->config->getHeartbeat())
+                        (int) round($this->config->getHeartbeat()),
+                        $this->config->getOption('channel_rpc_timeout')
                     );
                 } else {
                     $con = new AMQPSocketConnection(
@@ -213,7 +207,8 @@ class AmqpConnectionFactory implements InteropAmqpConnectionFactory, DelayStrate
                         (int) round($this->config->getReadTimeout()),
                         $this->config->getOption('keepalive'),
                         (int) round($this->config->getWriteTimeout()),
-                        (int) round($this->config->getHeartbeat())
+                        (int) round($this->config->getHeartbeat()),
+                        $this->config->getOption('channel_rpc_timeout')
                     );
                 }
             }
